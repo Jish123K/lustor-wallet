@@ -139,4 +139,35 @@ async def password_hash_login(username, password_hash):
     return result
 
 async def wallet_creation(username):
+    global ASYMMETRIC_PRIVATE_KEY
+
+    # Generate a new random seed and use it to create a new HD wallet
+    seed = wallet.generate_mnemonic()
+    w = wallet.create_wallet(network="BTC", seed=seed, children=1)
+
+    # Encrypt the seed using the asymmetric private key
+    encrypted_seed = rsa_encrypt(w.seed(), ASYMMETRIC_PRIVATE_KEY)
+
+    # Create a new wallet record in DynamoDB
+    wallet_data = {
+        "username": username,
+        "encryptedSeed": binascii.hexlify(encrypted_seed).decode(),
+        "xpub": w.serialize_b58(private=False),
+        "timestamp": int(time.time()),
+    }
+    async with httpx.AsyncClient(headers={"Authorization": ID_TOKEN}) as client:
+        response = await client.post(URL_CREATE_WALLET, json=wallet_data)
+        result = response.json()
+        if not response.status_code == 200:
+            logger.error(result)
+            return
+    logger.success(result)
+
+    # Print out the wallet details
+    pprint({
+        "seed": seed,
+        "encrypted_seed": binascii.hexlify(encrypted_seed).decode(),
+        "xpub": w.serialize_b58(private=False),
+    })
+
 
