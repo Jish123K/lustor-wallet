@@ -69,3 +69,84 @@ for key in ["username", "KDF", "code", "asymmetricPublicKey", "encryptedAsymmetr
 if not request.json.get(key):
 
 raise BadRequest(f"{key} is required")
+username = request.json["username"]
+
+code = request.json["code"]
+
+client = boto3.client("cognito-idp")
+
+try:
+
+    response = client.confirm_sign_up(
+
+        ClientId=CLIENT_ID,
+
+        SecretHash=get_secret_hash(username),
+
+        Username=username,
+
+        ConfirmationCode=code,
+
+        ForceAliasCreation=False,
+
+    )
+
+except client.exceptions.UserNotFoundException:
+
+    raise BadRequest("Username doesn't exist")
+
+except client.exceptions.CodeMismatchException:
+
+    raise BadRequest("Invalid verification code")
+
+except client.exceptions.NotAuthorizedException:
+
+    raise BadRequest("User is already confirmed")
+
+except client.exceptions.LimitExceededException:
+
+    raise BadRequest("Attempt limit exceeded, please try again later")
+
+except Exception as e:
+
+    raise BadRequest(f"Unknown error: {e.__str__()}")
+
+# Get user details from Cognito and insert into DynamoDB
+
+response = client.admin_get_user(UserPoolId=USER_POOL_ID, Username=username)
+
+user = {attr["Name"]: attr["Value"] for attr in response["UserAttributes"]}
+
+user.update({
+
+    "created_at": datetime.now().strftime("%d-%m-%Y"),
+
+    "kdf": request.json["KDF"],
+
+    "asymmetricPublicKey": request.json["asymmetricPublicKey"],
+
+    "encryptedEncryptionKey": request.json["encryptedEncryptionKey"],
+
+    "encryptedAsymmetricPrivateKey": request.json["encryptedAsymmetricPrivateKey"],
+
+    "iterations": request.json["iterations"],
+
+    "passwordDerivedKeyHash": request.json["passwordDerivedKeyHash"],
+
+    "passwordHash": request.json["passwordHash"]
+
+})
+
+table = dynamo.tables[os.environ.get("TABLE_NAME")]
+
+try:
+
+    table.put_item(Item=user)
+
+except Exception as e:
+
+    raise BadRequest(f"The user cannot be updated to DynamoDB: {e.__str__()}")
+
+return jsonify({"message": "The user has been confirmed"})
+
+
