@@ -169,5 +169,43 @@ async def wallet_creation(username):
         "encrypted_seed": binascii.hexlify(encrypted_seed).decode(),
         "xpub": w.serialize_b58(private=False),
     })
+async def get_wallet(username):
+
+    async with aiohttp.ClientSession(headers={"Authorization": ID_TOKEN}) as session:
+
+        response = await session.post(URL_GET_WALLET, json={"username": username})
+
+        if response.status != 200:
+
+            logger.error(f"Failed to get wallet: {response.reason}")
+
+            return
+
+        result = await response.json()
+
+        encrypted_mnemonic_phrase = result["data"].get("encryptedMnemonicPhrase")
+
+        if encrypted_mnemonic_phrase:
+
+            decrypted_mnemonic_phrase = aes_decrypt_CBC(ENCRYPTION_KEY, binascii.unhexlify(encrypted_mnemonic_phrase))
+
+            logger.success(f"User Mnemonic Phrase is {decrypted_mnemonic_phrase}")
+
+        else:
+
+            encrypted_private_key = result["data"].get("encryptedPrivateKey")
+
+            if encrypted_private_key:
+
+                decrypted_private_key = aes_decrypt_CBC(ENCRYPTION_KEY, binascii.unhexlify(encrypted_private_key))
+
+                logger.success(f"User Private Key is {decrypted_private_key}")
+
+            else:
+
+                logger.error("Failed to get wallet: encryptedMnemonicPhrase and encryptedPrivateKey not found in response")
+
+                return
+
 
 
